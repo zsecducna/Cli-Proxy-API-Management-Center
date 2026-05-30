@@ -12,6 +12,11 @@ import type { QuotaConfig } from './quotaConfigs';
 
 type QuotaScope = 'page' | 'all';
 
+// After this many consecutive failed background polls, stop masking with last-known-good data
+// and surface the real error. At the 60s auto-refresh cadence this is ~3 minutes of grace for
+// transient blips before a genuinely broken credential is shown as errored.
+const MAX_CONSECUTIVE_SILENT_FAILURES = 3;
+
 type QuotaUpdater<T> = T | ((prev: T) => T);
 
 type QuotaSetter<T> = (updater: QuotaUpdater<T>) => void;
@@ -35,6 +40,9 @@ export function useQuotaLoader<TState extends QuotaStatusState, TData>(
 
   const loadingRef = useRef(false);
   const requestIdRef = useRef(0);
+  // Per-file count of consecutive silent (background) failures. Used to bound how long a card may
+  // keep showing last-known-good data before a persistent error is surfaced.
+  const silentFailuresRef = useRef<Record<string, number>>({});
 
   const loadQuota = useCallback(
     async (
@@ -48,7 +56,9 @@ export function useQuotaLoader<TState extends QuotaStatusState, TData>(
       if (loadingRef.current) return;
       loadingRef.current = true;
       const requestId = ++requestIdRef.current;
-      setLoading(true, scope);
+      // Silent background polls must not touch the section loading flag: doing so flickers the
+      // "Refresh All" toolbar button (spinner + disabled) every tick. Only user-initiated loads show it.
+      if (!silent) setLoading(true, scope);
 
       try {
         if (targets.length === 0) return;
@@ -82,12 +92,23 @@ export function useQuotaLoader<TState extends QuotaStatusState, TData>(
           const nextState = { ...prev };
           results.forEach((result) => {
             if (result.status === 'success') {
+              // Successful poll clears any accumulated silent-failure streak for this file.
+              silentFailuresRef.current[result.name] = 0;
               nextState[result.name] = config.buildSuccessState(result.data as TData);
-            } else if (silent && prev[result.name]?.status === 'success') {
-              // Preserve last-known-good on a background tick; only surface fresh errors
-              // for user-initiated refreshes or when there is nothing good to keep.
+            } else if (
+              silent &&
+              prev[result.name]?.status === 'success' &&
+              (silentFailuresRef.current[result.name] ?? 0) < MAX_CONSECUTIVE_SILENT_FAILURES
+            ) {
+              // Preserve last-known-good on a background tick, but only for a bounded streak so a
+              // genuinely broken credential cannot keep showing stale "success" numbers forever.
+              silentFailuresRef.current[result.name] =
+                (silentFailuresRef.current[result.name] ?? 0) + 1;
               nextState[result.name] = prev[result.name];
             } else {
+              // User-initiated refresh, no good data to keep, or the silent grace window is
+              // exhausted: surface the real error and reset the streak.
+              silentFailuresRef.current[result.name] = 0;
               nextState[result.name] = config.buildErrorState(
                 result.error || t('common.unknown_error'),
                 result.errorStatus
@@ -98,7 +119,7 @@ export function useQuotaLoader<TState extends QuotaStatusState, TData>(
         });
       } finally {
         if (requestId === requestIdRef.current) {
-          setLoading(false);
+          if (!silent) setLoading(false);
           loadingRef.current = false;
         }
       }

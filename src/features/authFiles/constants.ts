@@ -8,6 +8,7 @@ import iconGrokDark from '@/assets/icons/grok-dark.svg';
 import iconIflow from '@/assets/icons/iflow.svg';
 import iconKimiDark from '@/assets/icons/kimi-dark.svg';
 import iconKimiLight from '@/assets/icons/kimi-light.svg';
+import iconKiro from '@/assets/icons/kiro.svg';
 import iconQwen from '@/assets/icons/qwen.svg';
 import iconVertex from '@/assets/icons/vertex.svg';
 import type { AuthFileItem } from '@/types';
@@ -95,6 +96,11 @@ export const TYPE_COLORS: Record<string, TypeColorSet> = {
     light: { bg: '#f5e3fc', text: '#9025c8' },
     dark: { bg: '#521490', text: '#d49cf5' },
   },
+  // Kiro logo: 幽灵紫 #7C5CFC（AWS CodeWhisperer），用偏靛的紫与 Qwen/iFlow 区分
+  kiro: {
+    light: { bg: '#ebe7fe', text: '#5b3fd6' },
+    dark: { bg: '#2f1f7a', text: '#b9a8fb' },
+  },
   // Vertex logo: Google 蓝 #4285F4
   vertex: {
     light: { bg: '#e4edfd', text: '#2b5fbc' },
@@ -120,6 +126,7 @@ export const AUTH_FILE_ICONS: Record<string, AuthFileIconAsset> = {
   xai: { light: iconGrok, dark: iconGrokDark },
   iflow: iconIflow,
   kimi: { light: iconKimiLight, dark: iconKimiDark },
+  kiro: iconKiro,
   qwen: iconQwen,
   vertex: iconVertex,
 };

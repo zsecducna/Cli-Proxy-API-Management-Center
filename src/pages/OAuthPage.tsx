@@ -15,6 +15,7 @@ import iconAntigravity from '@/assets/icons/antigravity.svg';
 import iconGemini from '@/assets/icons/gemini.svg';
 import iconKimiLight from '@/assets/icons/kimi-light.svg';
 import iconKimiDark from '@/assets/icons/kimi-dark.svg';
+import iconKiro from '@/assets/icons/kiro.svg';
 import iconVertex from '@/assets/icons/vertex.svg';
 import iconGrok from '@/assets/icons/grok.svg';
 import iconGrokDark from '@/assets/icons/grok-dark.svg';
@@ -31,6 +32,11 @@ interface ProviderState {
   callbackSubmitting?: boolean;
   callbackStatus?: 'success' | 'error';
   callbackError?: string;
+  // Kiro device flow: IAM Identity Center start URL (blank => AWS Builder ID) and region.
+  idcStartURL?: string;
+  region?: string;
+  // Kiro device flow: the user code to enter at the verification page.
+  userCode?: string;
 }
 
 interface VertexImportResult {
@@ -70,6 +76,7 @@ const PROVIDERS: { id: OAuthProvider; titleKey: string; hintKey: string; urlLabe
   { id: 'antigravity', titleKey: 'auth_login.antigravity_oauth_title', hintKey: 'auth_login.antigravity_oauth_hint', urlLabelKey: 'auth_login.antigravity_oauth_url_label', icon: iconAntigravity },
   { id: 'gemini-cli', titleKey: 'auth_login.gemini_cli_oauth_title', hintKey: 'auth_login.gemini_cli_oauth_hint', urlLabelKey: 'auth_login.gemini_cli_oauth_url_label', icon: iconGemini },
   { id: 'kimi', titleKey: 'auth_login.kimi_oauth_title', hintKey: 'auth_login.kimi_oauth_hint', urlLabelKey: 'auth_login.kimi_oauth_url_label', icon: { light: iconKimiLight, dark: iconKimiDark } },
+  { id: 'kiro', titleKey: 'auth_login.kiro_oauth_title', hintKey: 'auth_login.kiro_oauth_hint', urlLabelKey: 'auth_login.kiro_oauth_url_label', icon: iconKiro },
   { id: 'xai', titleKey: 'auth_login.xai_oauth_title', hintKey: 'auth_login.xai_oauth_hint', urlLabelKey: 'auth_login.xai_oauth_url_label', icon: { light: iconGrok, dark: iconGrokDark } }
 ];
 
@@ -229,6 +236,11 @@ export function OAuthPage() {
       if (provider === 'gemini-cli' && current.projectId !== undefined) {
         next.projectId = current.projectId;
       }
+      // Preserve Kiro's IDC start URL / region so "login another account" reuses them.
+      if (provider === 'kiro') {
+        if (current.idcStartURL !== undefined) next.idcStartURL = current.idcStartURL;
+        if (current.region !== undefined) next.region = current.region;
+      }
       return {
         ...prev,
         [provider]: next
@@ -290,6 +302,10 @@ export function OAuthPage() {
         ? 'ALL'
         : rawProjectId
       : undefined;
+    // Kiro device flow inputs: optional IAM Identity Center start URL + AWS region.
+    const kiroState = provider === 'kiro' ? states[provider] : undefined;
+    const idcStartURL = provider === 'kiro' ? (kiroState?.idcStartURL || '').trim() : '';
+    const region = provider === 'kiro' ? (kiroState?.region || '').trim() : '';
     // 项目 ID 可选：留空自动选择第一个可用项目；输入 ALL 获取全部项目
     if (provider === 'gemini-cli') {
       updateProviderState(provider, { projectIdError: undefined });
@@ -302,12 +318,17 @@ export function OAuthPage() {
       error: undefined,
       callbackStatus: undefined,
       callbackError: undefined,
-      callbackUrl: ''
+      callbackUrl: '',
+      userCode: undefined
     });
     try {
       const res = await oauthApi.startAuth(
         provider,
-        provider === 'gemini-cli' ? { projectId: projectId || undefined } : undefined
+        provider === 'gemini-cli'
+          ? { projectId: projectId || undefined }
+          : provider === 'kiro'
+            ? { idcStartURL: idcStartURL || undefined, region: region || undefined }
+            : undefined
       );
       if (!res.state) {
         const message = t('auth_login.missing_state');
@@ -321,7 +342,13 @@ export function OAuthPage() {
         showNotification(message, 'error');
         return;
       }
-      updateProviderState(provider, { url: res.url, state: res.state, status: 'waiting', polling: true });
+      updateProviderState(provider, {
+        url: res.url,
+        state: res.state,
+        status: 'waiting',
+        polling: true,
+        userCode: res.user_code
+      });
       startPolling(provider, res.state);
     } catch (err: unknown) {
       const message = getErrorMessage(err);
@@ -502,10 +529,42 @@ export function OAuthPage() {
                       />
                     </div>
                   )}
+                  {provider.id === 'kiro' && (
+                    <div className={styles.geminiProjectField}>
+                      <Input
+                        label={t('auth_login.kiro_idc_start_url_label')}
+                        hint={t('auth_login.kiro_idc_start_url_hint')}
+                        value={state.idcStartURL || ''}
+                        disabled={Boolean(state.polling)}
+                        onChange={(e) =>
+                          updateProviderState(provider.id, { idcStartURL: e.target.value })
+                        }
+                        placeholder={t('auth_login.kiro_idc_start_url_placeholder')}
+                      />
+                      <Input
+                        label={t('auth_login.kiro_region_label')}
+                        hint={t('auth_login.kiro_region_hint')}
+                        value={state.region || ''}
+                        disabled={Boolean(state.polling)}
+                        onChange={(e) =>
+                          updateProviderState(provider.id, { region: e.target.value })
+                        }
+                        placeholder={t('auth_login.kiro_region_placeholder')}
+                      />
+                    </div>
+                  )}
                   {state.url && (
                     <div className={styles.authUrlBox}>
                       <div className={styles.authUrlLabel}>{t(provider.urlLabelKey)}</div>
                       <div className={styles.authUrlValue}>{state.url}</div>
+                      {state.userCode && (
+                        <>
+                          <div className={styles.authUrlLabel}>
+                            {t('auth_login.kiro_user_code_label')}
+                          </div>
+                          <div className={styles.authUrlValue}>{state.userCode}</div>
+                        </>
+                      )}
                       <div className={styles.authUrlActions}>
                         <Button variant="secondary" size="sm" onClick={() => copyLink(state.url!)}>
                           {t(getAuthKey(provider.id, 'copy_link'))}

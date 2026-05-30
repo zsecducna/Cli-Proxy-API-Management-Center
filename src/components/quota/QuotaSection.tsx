@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { useInterval } from '@/hooks/useInterval';
 import { useNotificationStore, useQuotaStore, useThemeStore } from '@/stores';
 import type { AuthFileItem, ResolvedTheme } from '@/types';
 import { getStatusFromError } from '@/utils/quota';
@@ -27,6 +28,8 @@ type ViewMode = 'paged' | 'all';
 
 const MAX_ITEMS_PER_PAGE = 25;
 const MAX_SHOW_ALL_THRESHOLD = 30;
+// Polling cadence for live quota monitoring (matches the credential-friendly 60s rhythm).
+const QUOTA_AUTO_REFRESH_INTERVAL_MS = 60000;
 
 interface QuotaPaginationState<T> {
   pageSize: number;
@@ -96,13 +99,15 @@ interface QuotaSectionProps<TState extends QuotaStatusState, TData> {
   files: AuthFileItem[];
   loading: boolean;
   disabled: boolean;
+  autoRefresh: boolean;
 }
 
 export function QuotaSection<TState extends QuotaStatusState, TData>({
   config,
   files,
   loading,
-  disabled
+  disabled,
+  autoRefresh
 }: QuotaSectionProps<TState, TData>) {
   const { t } = useTranslation();
   const resolvedTheme: ResolvedTheme = useThemeStore((state) => state.resolvedTheme);
@@ -235,6 +240,21 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
       }
     },
     [config, disabled, quota, setQuota, showNotification, t]
+  );
+
+  // Live monitoring: while auto-refresh is on, poll quota for the visible cards on a fixed cadence.
+  // loadQuota carries its own in-flight guard, so overlapping ticks (or a manual refresh) are coalesced.
+  // silent=true keeps the rendered numbers visible between ticks and preserves last-known-good on
+  // transient errors, so the panel updates calmly instead of flashing "loading"/error every minute.
+  useInterval(
+    () => {
+      if (!autoRefresh || disabled) return;
+      const scope = effectiveViewMode === 'all' ? 'all' : 'page';
+      const targets = effectiveViewMode === 'all' ? filteredFiles : pageItems;
+      if (targets.length === 0) return;
+      loadQuota(targets, scope, setLoading, true);
+    },
+    autoRefresh && !disabled ? QUOTA_AUTO_REFRESH_INTERVAL_MS : null
   );
 
   const titleNode = (

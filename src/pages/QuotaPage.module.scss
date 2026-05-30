@@ -26,6 +26,18 @@
   margin: 0;
 }
 
+.autoRefreshLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+
+  :global(svg) {
+    display: block;
+  }
+}
+
 .headerActions {
   display: flex;
   gap: $spacing-sm;

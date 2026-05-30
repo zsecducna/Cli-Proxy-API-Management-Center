@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import type { AuthFileItem } from '@/types';
 import { useQuotaStore } from '@/stores';
 import { getStatusFromError } from '@/utils/quota';
+import type { QuotaStatusState } from './QuotaCard';
 import type { QuotaConfig } from './quotaConfigs';
 
 type QuotaScope = 'page' | 'all';
@@ -23,7 +24,9 @@ interface LoadQuotaResult<TData> {
   errorStatus?: number;
 }
 
-export function useQuotaLoader<TState, TData>(config: QuotaConfig<TState, TData>) {
+export function useQuotaLoader<TState extends QuotaStatusState, TData>(
+  config: QuotaConfig<TState, TData>
+) {
   const { t } = useTranslation();
   const quota = useQuotaStore(config.storeSelector);
   const setQuota = useQuotaStore((state) => state[config.storeSetter]) as QuotaSetter<
@@ -37,7 +40,10 @@ export function useQuotaLoader<TState, TData>(config: QuotaConfig<TState, TData>
     async (
       targets: AuthFileItem[],
       scope: QuotaScope,
-      setLoading: (loading: boolean, scope?: QuotaScope | null) => void
+      setLoading: (loading: boolean, scope?: QuotaScope | null) => void,
+      // Background polls pass silent=true: keep the rendered numbers visible (no loading flash)
+      // and preserve last-known-good data on transient errors instead of flipping cards to red.
+      silent = false
     ) => {
       if (loadingRef.current) return;
       loadingRef.current = true;
@@ -47,13 +53,15 @@ export function useQuotaLoader<TState, TData>(config: QuotaConfig<TState, TData>
       try {
         if (targets.length === 0) return;
 
-        setQuota((prev) => {
-          const nextState = { ...prev };
-          targets.forEach((file) => {
-            nextState[file.name] = config.buildLoadingState();
+        if (!silent) {
+          setQuota((prev) => {
+            const nextState = { ...prev };
+            targets.forEach((file) => {
+              nextState[file.name] = config.buildLoadingState();
+            });
+            return nextState;
           });
-          return nextState;
-        });
+        }
 
         const results = await Promise.all(
           targets.map(async (file): Promise<LoadQuotaResult<TData>> => {
@@ -75,6 +83,10 @@ export function useQuotaLoader<TState, TData>(config: QuotaConfig<TState, TData>
           results.forEach((result) => {
             if (result.status === 'success') {
               nextState[result.name] = config.buildSuccessState(result.data as TData);
+            } else if (silent && prev[result.name]?.status === 'success') {
+              // Preserve last-known-good on a background tick; only surface fresh errors
+              // for user-initiated refreshes or when there is nothing good to keep.
+              nextState[result.name] = prev[result.name];
             } else {
               nextState[result.name] = config.buildErrorState(
                 result.error || t('common.unknown_error'),

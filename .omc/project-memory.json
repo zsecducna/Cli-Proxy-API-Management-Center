@@ -1,0 +1,230 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1780164905233,
+  "projectRoot": "/Users/z/Desktop/Cli-Proxy-API-Management-Center",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "react",
+        "version": "19.2.1",
+        "category": "frontend"
+      },
+      {
+        "name": "react-dom",
+        "version": "19.2.1",
+        "category": "frontend"
+      },
+      {
+        "name": "vite",
+        "version": "8.0.10",
+        "category": "build"
+      }
+    ],
+    "packageManager": "npm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "export PATH=\"/opt/homebrew/bin:$PATH\"; rtk npm run build 2>&1 | tail -12",
+    "testCommand": null,
+    "lintCommand": "npm run lint",
+    "devCommand": "npm run dev",
+    "scripts": {
+      "dev": "vite",
+      "build": "tsc && vite build",
+      "preview": "vite preview",
+      "lint": "eslint . --ext ts,tsx --report-unused-disable-directives",
+      "format": "prettier --write \"src/**/*.{ts,tsx,css,scss}\"",
+      "type-check": "tsc --noEmit"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": "feature-based"
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "src"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 5,
+      "lastAccessed": 1780164905134,
+      "keyFiles": [
+        "App.css",
+        "App.tsx",
+        "index.css",
+        "main.tsx",
+        "vite-env.d.ts"
+      ]
+    },
+    "src/assets": {
+      "path": "src/assets",
+      "purpose": "Static assets",
+      "fileCount": 2,
+      "lastAccessed": 1780164905138,
+      "keyFiles": [
+        "logoInline.ts",
+        "react.svg"
+      ]
+    },
+    "src/components": {
+      "path": "src/components",
+      "purpose": "UI components",
+      "fileCount": 0,
+      "lastAccessed": 1780164905151,
+      "keyFiles": []
+    },
+    "src/pages": {
+      "path": "src/pages",
+      "purpose": "Page components",
+      "fileCount": 22,
+      "lastAccessed": 1780164905153,
+      "keyFiles": [
+        "AuthFilesOAuthExcludedEditPage.module.scss",
+        "AuthFilesOAuthExcludedEditPage.tsx",
+        "AuthFilesOAuthModelAliasEditPage.module.scss"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src/components/quota/QuotaSection.tsx",
+      "accessCount": 8,
+      "lastAccessed": 1780171685927,
+      "type": "file"
+    },
+    {
+      "path": "src/pages/QuotaPage.tsx",
+      "accessCount": 7,
+      "lastAccessed": 1780170465970,
+      "type": "file"
+    },
+    {
+      "path": "src/components/quota/useQuotaLoader.ts",
+      "accessCount": 6,
+      "lastAccessed": 1780171642649,
+      "type": "file"
+    },
+    {
+      "path": "src/hooks/useInterval.ts",
+      "accessCount": 3,
+      "lastAccessed": 1780170465829,
+      "type": "file"
+    },
+    {
+      "path": "src/pages/QuotaPage.module.scss",
+      "accessCount": 3,
+      "lastAccessed": 1780170511968,
+      "type": "file"
+    },
+    {
+      "path": "src/components/quota/QuotaCard.tsx",
+      "accessCount": 3,
+      "lastAccessed": 1780171027937,
+      "type": "file"
+    },
+    {
+      "path": "src/hooks/useHeaderRefresh.ts",
+      "accessCount": 2,
+      "lastAccessed": 1780167131708,
+      "type": "file"
+    },
+    {
+      "path": "src/components/quota/quotaConfigs.ts",
+      "accessCount": 2,
+      "lastAccessed": 1780167405039,
+      "type": "file"
+    },
+    {
+      "path": "src/i18n/locales/en.json",
+      "accessCount": 2,
+      "lastAccessed": 1780168138539,
+      "type": "file"
+    },
+    {
+      "path": "src/i18n/locales/zh-CN.json",
+      "accessCount": 2,
+      "lastAccessed": 1780168140619,
+      "type": "file"
+    },
+    {
+      "path": "src/i18n/locales/zh-TW.json",
+      "accessCount": 2,
+      "lastAccessed": 1780168143591,
+      "type": "file"
+    },
+    {
+      "path": "src/i18n/locales/ru.json",
+      "accessCount": 2,
+      "lastAccessed": 1780168146027,
+      "type": "file"
+    },
+    {
+      "path": "src/pages/LogsPage.tsx",
+      "accessCount": 2,
+      "lastAccessed": 1780170512021,
+      "type": "file"
+    },
+    {
+      "path": "src/pages/DashboardPage.tsx",
+      "accessCount": 1,
+      "lastAccessed": 1780165171904,
+      "type": "file"
+    },
+    {
+      "path": "src/types/quota.ts",
+      "accessCount": 1,
+      "lastAccessed": 1780167405167,
+      "type": "file"
+    },
+    {
+      "path": "src/hooks/useLocalStorage.ts",
+      "accessCount": 1,
+      "lastAccessed": 1780167591171,
+      "type": "file"
+    },
+    {
+      "path": "src/components/ui/ToggleSwitch.tsx",
+      "accessCount": 1,
+      "lastAccessed": 1780170511900,
+      "type": "file"
+    },
+    {
+      "path": "vite.config.ts",
+      "accessCount": 1,
+      "lastAccessed": 1780172005368,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

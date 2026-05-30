@@ -5,8 +5,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useAuthStore } from '@/stores';
 import { authFilesApi, configFileApi } from '@/services/api';
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
+import { IconTimer } from '@/components/ui/icons';
 import {
   QuotaSection,
   ANTIGRAVITY_CONFIG,
@@ -26,6 +29,7 @@ export function QuotaPage() {
   const [files, setFiles] = useState<AuthFileItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [autoRefresh, setAutoRefresh] = useLocalStorage('quotaPage.autoRefresh', false);
 
   const disableControls = connectionStatus !== 'connected';
 
@@ -68,6 +72,18 @@ export function QuotaPage() {
       <div className={styles.pageHeader}>
         <h1 className={styles.pageTitle}>{t('quota_management.title')}</h1>
         <p className={styles.description}>{t('quota_management.description')}</p>
+        <ToggleSwitch
+          checked={autoRefresh}
+          onChange={setAutoRefresh}
+          disabled={disableControls}
+          label={
+            <span className={styles.autoRefreshLabel}>
+              <IconTimer size={16} />
+              {t('quota_management.auto_refresh')}
+            </span>
+          }
+          ariaLabel={t('quota_management.auto_refresh_hint')}
+        />
       </div>
 
       {error && <div className={styles.errorBox}>{error}</div>}
@@ -77,36 +93,42 @@ export function QuotaPage() {
         files={files}
         loading={loading}
         disabled={disableControls}
+        autoRefresh={autoRefresh}
       />
       <QuotaSection
         config={ANTIGRAVITY_CONFIG}
         files={files}
         loading={loading}
         disabled={disableControls}
+        autoRefresh={autoRefresh}
       />
       <QuotaSection
         config={CODEX_CONFIG}
         files={files}
         loading={loading}
         disabled={disableControls}
+        autoRefresh={autoRefresh}
       />
       <QuotaSection
         config={XAI_CONFIG}
         files={files}
         loading={loading}
         disabled={disableControls}
+        autoRefresh={autoRefresh}
       />
       <QuotaSection
         config={GEMINI_CLI_CONFIG}
         files={files}
         loading={loading}
         disabled={disableControls}
+        autoRefresh={autoRefresh}
       />
       <QuotaSection
         config={KIMI_CONFIG}
         files={files}
         loading={loading}
         disabled={disableControls}
+        autoRefresh={autoRefresh}
       />
     </div>
   );

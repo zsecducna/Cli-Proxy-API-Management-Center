@@ -28,6 +28,8 @@ import type {
   GeminiCliUserTier,
   KimiQuotaRow,
   KimiQuotaState,
+  KiroQuotaRow,
+  KiroQuotaState,
   XaiBillingConfig,
   XaiBillingSummary,
   XaiQuotaState,
@@ -48,6 +50,14 @@ import {
   GEMINI_CLI_REQUEST_HEADERS,
   KIMI_USAGE_URL,
   KIMI_REQUEST_HEADERS,
+  KIRO_DEFAULT_PROFILE_ARN,
+  KIRO_DEFAULT_REGION,
+  KIRO_USAGE_GET_HEADERS,
+  KIRO_USAGE_POST_HEADERS,
+  KIRO_USAGE_Q_GET_HEADERS,
+  buildKiroUsageGetUrl,
+  buildKiroUsagePostUrl,
+  buildKiroUsageQGetUrl,
   XAI_BILLING_URL,
   XAI_REQUEST_HEADERS,
   normalizeGeminiCliModelId,
@@ -61,6 +71,7 @@ import {
   parseGeminiCliQuotaPayload,
   parseGeminiCliCodeAssistPayload,
   parseKimiUsagePayload,
+  parseKiroUsagePayload,
   parseXaiBillingPayload,
   resolveCodexChatgptAccountId,
   resolveCodexPlanType,
@@ -71,6 +82,7 @@ import {
   buildAntigravityQuotaGroups,
   buildGeminiCliQuotaBuckets,
   buildKimiQuotaRows,
+  buildKiroQuotaRows,
   createStatusError,
   getStatusFromError,
   isAntigravityFile,
@@ -79,6 +91,7 @@ import {
   isDisabledAuthFile,
   isGeminiCliFile,
   isKimiFile,
+  isKiroFile,
   isRuntimeOnlyAuthFile,
   isXaiFile,
 } from '@/utils/quota';
@@ -88,7 +101,7 @@ import styles from '@/pages/QuotaPage.module.scss';
 
 type QuotaUpdater<T> = T | ((prev: T) => T);
 
-type QuotaType = 'antigravity' | 'claude' | 'codex' | 'gemini-cli' | 'kimi' | 'xai';
+type QuotaType = 'antigravity' | 'claude' | 'codex' | 'gemini-cli' | 'kimi' | 'kiro' | 'xai';
 
 const DEFAULT_ANTIGRAVITY_PROJECT_ID = 'bamboo-precept-lgxtn';
 const QUOTA_PROGRESS_HIGH_THRESHOLD = 70;
@@ -110,12 +123,14 @@ export interface QuotaStore {
   codexQuota: Record<string, CodexQuotaState>;
   geminiCliQuota: Record<string, GeminiCliQuotaState>;
   kimiQuota: Record<string, KimiQuotaState>;
+  kiroQuota: Record<string, KiroQuotaState>;
   xaiQuota: Record<string, XaiQuotaState>;
   setAntigravityQuota: (updater: QuotaUpdater<Record<string, AntigravityQuotaState>>) => void;
   setClaudeQuota: (updater: QuotaUpdater<Record<string, ClaudeQuotaState>>) => void;
   setCodexQuota: (updater: QuotaUpdater<Record<string, CodexQuotaState>>) => void;
   setGeminiCliQuota: (updater: QuotaUpdater<Record<string, GeminiCliQuotaState>>) => void;
   setKimiQuota: (updater: QuotaUpdater<Record<string, KimiQuotaState>>) => void;
+  setKiroQuota: (updater: QuotaUpdater<Record<string, KiroQuotaState>>) => void;
   setXaiQuota: (updater: QuotaUpdater<Record<string, XaiQuotaState>>) => void;
   clearQuotaCache: () => void;
 }
@@ -1524,6 +1539,253 @@ export const KIMI_CONFIG: QuotaConfig<KimiQuotaState, KimiQuotaRow[]> = {
   controlClassName: styles.kimiControl,
   gridClassName: styles.kimiGrid,
   renderQuotaItems: renderKimiItems,
+};
+
+// Result shape returned by fetchKiroQuota. `message` carries a non-error informational note
+// (e.g. quota API unreachable for an IDC session) so the card can stay calm instead of red.
+type KiroFetchResult = {
+  plan: string | null;
+  rows: KiroQuotaRow[];
+  message?: string;
+};
+
+// Extracts the region embedded in a CodeWhisperer profile ARN
+// (arn:aws:codewhisperer:<region>:<account>:profile/<id>).
+const regionFromKiroProfileArn = (profileArn: string): string | null => {
+  const parts = profileArn.split(':');
+  return parts.length >= 4 && parts[3].trim() ? parts[3].trim() : null;
+};
+
+// Resolves the Kiro profile ARN, region, and auth method from the stored credential file.
+// The auth-files list endpoint does not expose these, so we download the credential text
+// (same approach as Antigravity's project-id resolution).
+const resolveKiroProfile = async (
+  file: AuthFileItem
+): Promise<{ profileArn: string; region: string; authMethod: string }> => {
+  const fallback = {
+    profileArn: KIRO_DEFAULT_PROFILE_ARN,
+    region: KIRO_DEFAULT_REGION,
+    authMethod: 'builder-id',
+  };
+
+  try {
+    const text = await authFilesApi.downloadText(file.name);
+    const trimmed = text.trim();
+    if (!trimmed) return fallback;
+
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    const profileArn =
+      normalizeStringValue(parsed.profile_arn ?? parsed.profileArn) ?? KIRO_DEFAULT_PROFILE_ARN;
+    const region =
+      normalizeStringValue(parsed.region) ??
+      regionFromKiroProfileArn(profileArn) ??
+      KIRO_DEFAULT_REGION;
+    // Lowercase so the downstream auth-method comparisons (idc/google/github/social) are case-insensitive.
+    const authMethod =
+      (normalizeStringValue(parsed.auth_method ?? parsed.authMethod) ?? 'builder-id').toLowerCase();
+
+    return { profileArn, region, authMethod };
+  } catch {
+    return fallback;
+  }
+};
+
+const fetchKiroQuota = async (file: AuthFileItem, t: TFunction): Promise<KiroFetchResult> => {
+  const rawAuthIndex = file['auth_index'] ?? file.authIndex;
+  const authIndex = normalizeAuthIndex(rawAuthIndex);
+  if (!authIndex) {
+    throw new Error(t('kiro_quota.missing_auth_index'));
+  }
+
+  const { profileArn, region, authMethod } = await resolveKiroProfile(file);
+
+  // AWS exposes GetUsageLimits three ways; try each until one returns 2xx, mirroring the Kiro CLI:
+  //   1. codewhisperer.{region} REST GET (no body)
+  //   2. codewhisperer.{region} AWS-JSON POST with the profile ARN
+  //   3. q.{region} REST GET with the profile ARN in the query string (legacy alias)
+  const attempts: Array<{ method: string; url: string; header: Record<string, string>; data?: string }> = [
+    {
+      method: 'GET',
+      url: buildKiroUsageGetUrl(region),
+      header: { ...KIRO_USAGE_GET_HEADERS },
+    },
+    {
+      method: 'POST',
+      url: buildKiroUsagePostUrl(region),
+      header: { ...KIRO_USAGE_POST_HEADERS },
+      data: JSON.stringify({ origin: 'AI_EDITOR', profileArn, resourceType: 'AGENTIC_REQUEST' }),
+    },
+    {
+      method: 'GET',
+      url: buildKiroUsageQGetUrl(region, profileArn),
+      header: { ...KIRO_USAGE_Q_GET_HEADERS },
+    },
+  ];
+
+  let sawAuthError = false;
+  let lastError = '';
+  let lastStatus: number | undefined;
+
+  for (const attempt of attempts) {
+    try {
+      const result = await apiCallApi.request({
+        authIndex,
+        method: attempt.method,
+        url: attempt.url,
+        header: attempt.header,
+        data: attempt.data,
+      });
+
+      if (result.statusCode < 200 || result.statusCode >= 300) {
+        if (result.statusCode === 401 || result.statusCode === 403) {
+          sawAuthError = true;
+        }
+        lastError = getApiCallErrorMessage(result);
+        lastStatus = result.statusCode;
+        continue;
+      }
+
+      const payload = parseKiroUsagePayload(result.body ?? result.bodyText);
+      if (!payload) {
+        lastError = t('kiro_quota.empty_data');
+        continue;
+      }
+
+      return buildKiroQuotaRows(payload);
+    } catch (err: unknown) {
+      lastError = err instanceof Error ? err.message : t('common.unknown_error');
+    }
+  }
+
+  // The CodeWhisperer quota API frequently rejects non-Builder-ID sessions even though chat
+  // still works. Surface that as an informational message rather than a hard error so the
+  // card does not turn red for a credential that is otherwise healthy.
+  if (sawAuthError && authMethod === 'idc') {
+    return { plan: null, rows: [], message: t('kiro_quota.idc_unavailable') };
+  }
+  if (sawAuthError && (authMethod === 'google' || authMethod === 'github' || authMethod === 'social')) {
+    return { plan: null, rows: [], message: t('kiro_quota.social_unavailable') };
+  }
+  if (sawAuthError) {
+    return { plan: null, rows: [], message: t('kiro_quota.auth_rejected') };
+  }
+
+  throw createStatusError(lastError || t('common.unknown_error'), lastStatus);
+};
+
+// Formats a usage amount: integers print plainly, fractional values round to 2 decimals.
+const formatKiroAmount = (value: number): string => {
+  if (Number.isInteger(value)) return String(value);
+  return String(Math.round(value * 100) / 100);
+};
+
+const renderKiroItems = (
+  quota: KiroQuotaState,
+  t: TFunction,
+  helpers: QuotaRenderHelpers
+): ReactNode => {
+  const { styles: styleMap, QuotaProgressBar } = helpers;
+  const { createElement: h } = React;
+  const rows = quota.rows ?? [];
+  const nodes: ReactNode[] = [];
+
+  if (quota.plan) {
+    nodes.push(
+      h(
+        'div',
+        { key: 'plan', className: styleMap.quotaMessage },
+        t('kiro_quota.plan_label', { plan: quota.plan })
+      )
+    );
+  }
+
+  if (quota.message) {
+    nodes.push(h('div', { key: 'message', className: styleMap.quotaMessage }, quota.message));
+  }
+
+  if (rows.length === 0) {
+    if (nodes.length === 0) {
+      return h('div', { className: styleMap.quotaMessage }, t('kiro_quota.empty_data'));
+    }
+    return nodes;
+  }
+
+  rows.forEach((row) => {
+    const limit = row.limit;
+    const used = row.used;
+    const remaining =
+      limit > 0
+        ? Math.max(0, Math.min(100, Math.round(((limit - used) / limit) * 100)))
+        : used > 0
+          ? 0
+          : null;
+    const percentLabel = remaining === null ? '--' : `${remaining}%`;
+    const rowLabel = row.labelKey
+      ? t(row.labelKey, (row.labelParams ?? {}) as Record<string, string | number>)
+      : (row.label ?? '');
+    const resetLabel = row.resetHint ? t('kiro_quota.reset_hint', { hint: row.resetHint }) : '';
+
+    nodes.push(
+      h(
+        'div',
+        { key: row.id, className: styleMap.quotaRow },
+        h(
+          'div',
+          { className: styleMap.quotaRowHeader },
+          h('span', { className: styleMap.quotaModel }, rowLabel),
+          h(
+            'div',
+            { className: styleMap.quotaMeta },
+            h('span', { className: styleMap.quotaPercent }, percentLabel),
+            limit > 0
+              ? h(
+                  'span',
+                  { className: styleMap.quotaAmount },
+                  `${formatKiroAmount(used)} / ${formatKiroAmount(limit)}`
+                )
+              : null,
+            resetLabel ? h('span', { className: styleMap.quotaReset }, resetLabel) : null
+          )
+        ),
+        h(QuotaProgressBar, {
+          percent: remaining,
+          highThreshold: QUOTA_PROGRESS_HIGH_THRESHOLD,
+          mediumThreshold: QUOTA_PROGRESS_MEDIUM_THRESHOLD,
+        })
+      )
+    );
+  });
+
+  return nodes;
+};
+
+export const KIRO_CONFIG: QuotaConfig<KiroQuotaState, KiroFetchResult> = {
+  type: 'kiro',
+  i18nPrefix: 'kiro_quota',
+  cardIdleMessageKey: 'quota_management.card_idle_hint',
+  filterFn: (file) => isKiroFile(file) && !isDisabledAuthFile(file),
+  fetchQuota: fetchKiroQuota,
+  storeSelector: (state) => state.kiroQuota,
+  storeSetter: 'setKiroQuota',
+  buildLoadingState: () => ({ status: 'loading', plan: null, rows: [] }),
+  buildSuccessState: (data) => ({
+    status: 'success',
+    plan: data.plan,
+    rows: data.rows,
+    message: data.message,
+  }),
+  buildErrorState: (message, status) => ({
+    status: 'error',
+    plan: null,
+    rows: [],
+    error: message,
+    errorStatus: status,
+  }),
+  cardClassName: styles.kiroCard,
+  controlsClassName: styles.kiroControls,
+  controlClassName: styles.kiroControl,
+  gridClassName: styles.kiroGrid,
+  renderQuotaItems: renderKiroItems,
 };
 
 export const XAI_CONFIG: QuotaConfig<XaiQuotaState, XaiBillingSummary> = {

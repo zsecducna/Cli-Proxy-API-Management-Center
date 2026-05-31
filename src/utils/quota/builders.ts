@@ -14,6 +14,8 @@ import type {
   KimiLimitItem,
   KimiLimitWindow,
   KimiQuotaRow,
+  KiroUsagePayload,
+  KiroQuotaRow,
 } from '@/types';
 import {
   ANTIGRAVITY_QUOTA_GROUPS,
@@ -404,4 +406,106 @@ export function buildKimiQuotaRows(payload: KimiUsagePayload): KimiQuotaRow[] {
   }
 
   return rows;
+}
+
+// --- Kiro (AWS CodeWhisperer) -------------------------------------------------
+
+// CodeWhisperer reports usage with fractional precision (currentUsageWithPrecision etc.),
+// so unlike Kimi we keep floats instead of flooring to int.
+function toFloat(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+// Turns a "Agentic Request"-style label out of an AWS resourceType token (AGENTIC_REQUEST).
+function prettifyKiroResourceType(resourceType: string): string {
+  return resourceType
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+// Converts an absolute reset marker (ISO string or epoch in seconds/ms) into a compact
+// "Xh Ym" countdown, matching the Kimi reset-hint format. Returns undefined when already past.
+function kiroResetHint(resetValue: unknown): string | undefined {
+  if (resetValue === undefined || resetValue === null) return undefined;
+
+  let target: number | null = null;
+  if (typeof resetValue === 'number' && Number.isFinite(resetValue)) {
+    // Heuristic shared with the Kiro CLI: values below 1e12 are seconds, otherwise ms.
+    target = resetValue < 1e12 ? resetValue * 1000 : resetValue;
+  } else if (typeof resetValue === 'string' && resetValue.trim()) {
+    const parsed = new Date(resetValue.trim());
+    if (!Number.isNaN(parsed.getTime())) target = parsed.getTime();
+  }
+  if (target === null) return undefined;
+
+  const delta = target - Date.now();
+  if (delta <= 0) return undefined;
+  const totalMinutes = Math.floor(delta / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h`;
+  if (minutes > 0) return `${minutes}m`;
+  return '<1m';
+}
+
+// Builds Kiro quota rows from a CodeWhisperer GetUsageLimits payload.
+// Each usage breakdown becomes a row (used/limit); any free-trial sub-allowance becomes a
+// second row tagged via labelParams so it renders as "<resource> (Free Trial)".
+export function buildKiroQuotaRows(payload: KiroUsagePayload): {
+  plan: string | null;
+  rows: KiroQuotaRow[];
+} {
+  const rows: KiroQuotaRow[] = [];
+  const breakdownList = Array.isArray(payload.usageBreakdownList)
+    ? payload.usageBreakdownList
+    : [];
+  const resetAt = payload.nextDateReset ?? payload.resetDate;
+
+  breakdownList.forEach((breakdown, idx) => {
+    const rawType =
+      typeof breakdown.resourceType === 'string' && breakdown.resourceType.trim()
+        ? breakdown.resourceType.trim()
+        : `resource-${idx}`;
+    const key = rawType.toLowerCase();
+    const label = prettifyKiroResourceType(rawType);
+
+    rows.push({
+      id: `${key}-${idx}`,
+      label,
+      used: toFloat(breakdown.currentUsageWithPrecision) ?? 0,
+      limit: toFloat(breakdown.usageLimitWithPrecision) ?? 0,
+      resetHint: kiroResetHint(resetAt),
+    });
+
+    const freeTrial = breakdown.freeTrialInfo;
+    if (freeTrial && typeof freeTrial === 'object') {
+      rows.push({
+        id: `${key}-${idx}-freetrial`,
+        labelKey: 'kiro_quota.free_trial_label',
+        labelParams: { resource: label },
+        used: toFloat(freeTrial.currentUsageWithPrecision) ?? 0,
+        limit: toFloat(freeTrial.usageLimitWithPrecision) ?? 0,
+        resetHint: kiroResetHint(freeTrial.freeTrialExpiry ?? resetAt),
+      });
+    }
+  });
+
+  const plan =
+    (typeof payload.subscriptionInfo?.subscriptionTitle === 'string' &&
+      payload.subscriptionInfo.subscriptionTitle.trim()) ||
+    null;
+
+  return { plan, rows };
 }

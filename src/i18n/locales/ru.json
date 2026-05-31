@@ -473,6 +473,24 @@
     "limit_index": "Лимит #{{index}}",
     "reset_hint": "сброс через {{hint}}"
   },
+  "kiro_quota": {
+    "title": "Квота Kiro",
+    "empty_title": "Файлы авторизации Kiro отсутствуют",
+    "empty_desc": "Войдите через Kiro (AWS CodeWhisperer), чтобы увидеть оставшуюся квоту.",
+    "idle": "Не загружено. Нажмите \"Обновить квоту\".",
+    "loading": "Загрузка квоты...",
+    "load_failed": "Не удалось загрузить квоту: {{message}}",
+    "missing_auth_index": "В файле авторизации отсутствует auth_index",
+    "empty_data": "Данные по квоте отсутствуют",
+    "refresh_button": "Обновить квоту",
+    "fetch_all": "Получить все",
+    "plan_label": "Тариф: {{plan}}",
+    "free_trial_label": "{{resource}} (Пробный период)",
+    "reset_hint": "сброс через {{hint}}",
+    "idc_unavailable": "API квоты недоступен для этой сессии AWS IAM Identity Center. Чат может работать; переподключите Kiro, если ошибка повторяется.",
+    "social_unavailable": "Срок аутентификации API квоты для этого социального входа истёк. Чат может работать.",
+    "auth_rejected": "API квоты отклонил текущий токен. Чат может работать."
+  },
   "xai_quota": {
     "title": "Квота Grok",
     "empty_title": "Файлы авторизации xAI/Grok отсутствуют",

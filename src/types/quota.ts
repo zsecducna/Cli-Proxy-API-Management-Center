@@ -307,6 +307,55 @@ export interface KimiQuotaState {
   errorStatus?: number;
 }
 
+// Kiro (AWS CodeWhisperer) API payload types.
+// Shape mirrors the CodeWhisperer GetUsageLimits response: a list of per-resource
+// usage breakdowns, each optionally carrying a free-trial sub-allowance.
+export interface KiroFreeTrialInfo {
+  currentUsageWithPrecision?: number;
+  usageLimitWithPrecision?: number;
+  freeTrialExpiry?: string | number;
+}
+
+export interface KiroUsageBreakdown {
+  resourceType?: string;
+  currentUsageWithPrecision?: number;
+  usageLimitWithPrecision?: number;
+  freeTrialInfo?: KiroFreeTrialInfo;
+}
+
+export interface KiroSubscriptionInfo {
+  subscriptionTitle?: string;
+}
+
+export interface KiroUsagePayload {
+  usageBreakdownList?: KiroUsageBreakdown[];
+  nextDateReset?: string | number;
+  resetDate?: string | number;
+  subscriptionInfo?: KiroSubscriptionInfo;
+}
+
+export interface KiroQuotaRow {
+  id: string;
+  label?: string;
+  labelKey?: string;
+  labelParams?: Record<string, string | number>;
+  used: number;
+  limit: number;
+  resetHint?: string;
+}
+
+export interface KiroQuotaState {
+  status: 'idle' | 'loading' | 'success' | 'error';
+  // Subscription tier title (e.g. "Kiro Pro"); falls back to a generic label when absent.
+  plan?: string | null;
+  rows: KiroQuotaRow[];
+  // Non-error informational message: set when the quota API is unreachable for the
+  // current auth method (notably AWS IAM Identity Center) but the credential still works.
+  message?: string;
+  error?: string;
+  errorStatus?: number;
+}
+
 // xAI/Grok API payload types
 export interface XaiBillingCent {
   val?: number | string;

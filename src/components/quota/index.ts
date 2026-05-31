@@ -11,6 +11,7 @@ export {
   CODEX_CONFIG,
   GEMINI_CLI_CONFIG,
   KIMI_CONFIG,
+  KIRO_CONFIG,
   XAI_CONFIG,
 } from './quotaConfigs';
 export type { QuotaConfig } from './quotaConfigs';

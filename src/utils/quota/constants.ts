@@ -213,3 +213,62 @@ export const XAI_BILLING_URL = 'https://cli-chat-proxy.grok.com/v1/billing';
 export const XAI_REQUEST_HEADERS = {
   Authorization: 'Bearer $TOKEN$',
 };
+
+// Kiro (AWS CodeWhisperer) API configuration.
+// Quota lives behind the CodeWhisperer GetUsageLimits operation. AWS exposes it both as a
+// REST-style GET on the regional codewhisperer host and as an AWS-JSON POST; we try GET first
+// and fall back to POST, mirroring the Kiro/Amazon Q Developer CLI behaviour.
+export const KIRO_DEFAULT_REGION = 'us-east-1';
+
+// Default profile ARN used only as a last-resort fallback when the credential file carries none.
+export const KIRO_DEFAULT_PROFILE_ARN =
+  'arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX';
+
+// Query string shared by the GET and q-host fallback attempts.
+export const KIRO_USAGE_QUERY = 'isEmailRequired=true&origin=AI_EDITOR&resourceType=AGENTIC_REQUEST';
+
+// Builds the regional CodeWhisperer GetUsageLimits GET endpoint.
+export function buildKiroUsageGetUrl(region: string): string {
+  const normalized = (region || KIRO_DEFAULT_REGION).trim() || KIRO_DEFAULT_REGION;
+  return `https://codewhisperer.${normalized}.amazonaws.com/getUsageLimits?${KIRO_USAGE_QUERY}`;
+}
+
+// Builds the regional CodeWhisperer service root used for the AWS-JSON POST fallback.
+export function buildKiroUsagePostUrl(region: string): string {
+  const normalized = (region || KIRO_DEFAULT_REGION).trim() || KIRO_DEFAULT_REGION;
+  return `https://codewhisperer.${normalized}.amazonaws.com`;
+}
+
+// GET-style request: bearer token plus the AWS SDK user-agent markers Kiro IDE sends.
+export const KIRO_USAGE_GET_HEADERS = {
+  Authorization: 'Bearer $TOKEN$',
+  Accept: 'application/json',
+  'x-amz-user-agent': 'aws-sdk-js/1.0.0 KiroIDE',
+  'User-Agent': 'aws-sdk-js/1.0.0 KiroIDE',
+};
+
+// POST fallback: AWS-JSON 1.0 target for the GetUsageLimits operation.
+export const KIRO_USAGE_POST_HEADERS = {
+  Authorization: 'Bearer $TOKEN$',
+  'Content-Type': 'application/x-amz-json-1.0',
+  'x-amz-target': 'AmazonCodeWhispererService.GetUsageLimits',
+  Accept: 'application/json',
+};
+
+// Builds the regional Amazon Q GetUsageLimits GET endpoint (third fallback).
+// Unlike the codewhisperer GET, this variant carries the profile ARN in the query string.
+export function buildKiroUsageQGetUrl(region: string, profileArn: string): string {
+  const normalized = (region || KIRO_DEFAULT_REGION).trim() || KIRO_DEFAULT_REGION;
+  const params = new URLSearchParams({
+    origin: 'AI_EDITOR',
+    profileArn,
+    resourceType: 'AGENTIC_REQUEST',
+  });
+  return `https://q.${normalized}.amazonaws.com/getUsageLimits?${params.toString()}`;
+}
+
+// q-host GET: minimal bearer + accept headers.
+export const KIRO_USAGE_Q_GET_HEADERS = {
+  Authorization: 'Bearer $TOKEN$',
+  Accept: 'application/json',
+};

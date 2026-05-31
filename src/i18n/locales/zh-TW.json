@@ -476,6 +476,24 @@
     "limit_index": "限額 #{{index}}",
     "reset_hint": "{{hint}} 後重置"
   },
+  "kiro_quota": {
+    "title": "Kiro 配額",
+    "empty_title": "暫無 Kiro 驗證",
+    "empty_desc": "透過 Kiro（AWS CodeWhisperer）登入後即可查看配額。",
+    "idle": "點擊此處重新整理配額",
+    "loading": "正在載入配額...",
+    "load_failed": "配額取得失敗：{{message}}",
+    "missing_auth_index": "驗證檔案缺少 auth_index",
+    "empty_data": "暫無配額資料",
+    "refresh_button": "重新整理配額",
+    "fetch_all": "取得全部",
+    "plan_label": "方案：{{plan}}",
+    "free_trial_label": "{{resource}}（免費試用）",
+    "reset_hint": "{{hint}} 後重置",
+    "idc_unavailable": "此 AWS IAM Identity Center 工作階段無法存取配額 API。聊天可能仍可用；若持續出現請重新連接 Kiro。",
+    "social_unavailable": "此社交登入的配額 API 驗證已過期。聊天可能仍可用。",
+    "auth_rejected": "配額 API 拒絕了目前的權杖。聊天可能仍可用。"
+  },
   "xai_quota": {
     "title": "Grok 配額",
     "empty_title": "暫無 xAI/Grok 驗證",

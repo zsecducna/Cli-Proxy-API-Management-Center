@@ -35,6 +35,9 @@ interface ProviderState {
   // Kiro device flow: IAM Identity Center start URL (blank => AWS Builder ID) and region.
   idcStartURL?: string;
   region?: string;
+  // Kiro IDC login: username used to name the saved auth file (required only for IDC).
+  username?: string;
+  usernameError?: string;
   // Kiro device flow: the user code to enter at the verification page.
   userCode?: string;
 }
@@ -236,10 +239,11 @@ export function OAuthPage() {
       if (provider === 'gemini-cli' && current.projectId !== undefined) {
         next.projectId = current.projectId;
       }
-      // Preserve Kiro's IDC start URL / region so "login another account" reuses them.
+      // Preserve Kiro's IDC start URL / region / username so "login another account" reuses them.
       if (provider === 'kiro') {
         if (current.idcStartURL !== undefined) next.idcStartURL = current.idcStartURL;
         if (current.region !== undefined) next.region = current.region;
+        if (current.username !== undefined) next.username = current.username;
       }
       return {
         ...prev,
@@ -306,9 +310,24 @@ export function OAuthPage() {
     const kiroState = provider === 'kiro' ? states[provider] : undefined;
     const idcStartURL = provider === 'kiro' ? (kiroState?.idcStartURL || '').trim() : '';
     const region = provider === 'kiro' ? (kiroState?.region || '').trim() : '';
+    // Username is required only for the IDC method (when an IDC start URL is present);
+    // the AWS Builder ID flow ignores it. The backend names the saved auth file after it.
+    const username = provider === 'kiro' ? (kiroState?.username || '').trim() : '';
+    // Block IDC login when username is empty: surface an inline field error and stop.
+    if (provider === 'kiro' && idcStartURL && !username) {
+      updateProviderState(provider, {
+        usernameError: t('auth_login.kiro_username_required')
+      });
+      showNotification(t('auth_login.kiro_username_required'), 'warning');
+      return;
+    }
     // 项目 ID 可选：留空自动选择第一个可用项目；输入 ALL 获取全部项目
     if (provider === 'gemini-cli') {
       updateProviderState(provider, { projectIdError: undefined });
+    }
+    // Clear any stale Kiro username validation error before starting a fresh attempt.
+    if (provider === 'kiro') {
+      updateProviderState(provider, { usernameError: undefined });
     }
     updateProviderState(provider, {
       url: undefined,
@@ -327,7 +346,7 @@ export function OAuthPage() {
         provider === 'gemini-cli'
           ? { projectId: projectId || undefined }
           : provider === 'kiro'
-            ? { idcStartURL: idcStartURL || undefined, region: region || undefined }
+            ? { idcStartURL: idcStartURL || undefined, region: region || undefined, username: username || undefined }
             : undefined
       );
       if (!res.state) {
@@ -540,6 +559,20 @@ export function OAuthPage() {
                           updateProviderState(provider.id, { idcStartURL: e.target.value })
                         }
                         placeholder={t('auth_login.kiro_idc_start_url_placeholder')}
+                      />
+                      <Input
+                        label={t('auth_login.kiro_username_label')}
+                        hint={t('auth_login.kiro_username_hint')}
+                        value={state.username || ''}
+                        error={state.usernameError}
+                        disabled={Boolean(state.polling)}
+                        onChange={(e) =>
+                          updateProviderState(provider.id, {
+                            username: e.target.value,
+                            usernameError: undefined
+                          })
+                        }
+                        placeholder={t('auth_login.kiro_username_placeholder')}
                       />
                       <Input
                         label={t('auth_login.kiro_region_label')}

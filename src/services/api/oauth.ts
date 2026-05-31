@@ -39,7 +39,7 @@ const CALLBACK_PROVIDER_MAP: Partial<Record<OAuthProvider, string>> = {
 export const oauthApi = {
   startAuth: (
     provider: OAuthProvider,
-    options?: { projectId?: string; idcStartURL?: string; region?: string }
+    options?: { projectId?: string; idcStartURL?: string; region?: string; username?: string }
   ) => {
     const params: Record<string, string | boolean> = {};
     if (WEBUI_SUPPORTED.includes(provider)) {
@@ -53,8 +53,12 @@ export const oauthApi = {
     if (provider === 'kiro') {
       const idcStartURL = options?.idcStartURL?.trim();
       const region = options?.region?.trim();
+      const username = options?.username?.trim();
       if (idcStartURL) params.idc_start_url = idcStartURL;
       if (region) params.region = region;
+      // Username is required by the backend for IDC login (used to name the saved
+      // auth file). Only send it when present; validation is enforced at the call site.
+      if (username) params.username = username;
     }
     return apiClient.get<OAuthStartResponse>(`/${provider}-auth-url`, {
       params: Object.keys(params).length ? params : undefined

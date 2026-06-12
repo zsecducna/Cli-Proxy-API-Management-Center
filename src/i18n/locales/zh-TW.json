@@ -696,7 +696,7 @@
     "kiro_method_builder_id": "AWS Builder ID",
     "kiro_method_idc": "AWS IAM Identity Center",
     "kiro_method_sso": "SSO",
-    "kiro_sso_hint": "使用企業 SSO / Kiro 帳戶登入（Google、GitHub 或貴組織的身分提供者，例如 Azure AD 租戶）。將開啟瀏覽器視窗進行登入；無需起始連結。",
+    "kiro_sso_hint": "使用企業 SSO / Kiro 帳戶登入（Google、GitHub 或貴組織的身分提供者，例如 Azure AD 租戶）。將開啟瀏覽器視窗進行登入；無需起始連結。請在與瀏覽器相同的機器上執行代理——登入透過本機 3128 連接埠回呼完成。",
     "kiro_idc_start_url_required": "IDC 登入需要起始連結。",
     "kiro_oauth_url_label": "授權連結:",
     "kiro_open_link": "開啟連結",

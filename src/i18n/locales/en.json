@@ -696,7 +696,7 @@
     "kiro_method_builder_id": "AWS Builder ID",
     "kiro_method_idc": "AWS IAM Identity Center",
     "kiro_method_sso": "SSO",
-    "kiro_sso_hint": "Sign in with your enterprise SSO / Kiro account (Google, GitHub, or your organization's identity provider such as an Azure AD tenant). A browser window opens for sign-in; no start URL is required.",
+    "kiro_sso_hint": "Sign in with your enterprise SSO / Kiro account (Google, GitHub, or your organization's identity provider such as an Azure AD tenant). A browser window opens for sign-in; no start URL is required. Run the proxy on the same machine as your browser — sign-in completes via a local callback on port 3128.",
     "kiro_idc_start_url_required": "Start URL is required for IDC login.",
     "kiro_oauth_url_label": "Authorization URL:",
     "kiro_open_link": "Open Link",

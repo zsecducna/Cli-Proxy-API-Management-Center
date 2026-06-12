@@ -1599,6 +1599,12 @@ const fetchKiroQuota = async (file: AuthFileItem, t: TFunction): Promise<KiroFet
 
   const { profileArn, region, authMethod } = await resolveKiroProfile(file);
 
+  // External IdP (enterprise SSO) tokens must declare their type or CodeWhisperer does not
+  // recognize them (it returns an empty/!2xx response), mirroring the Kiro IDE which adds the
+  // same header for external_idp credentials on every CodeWhisperer call.
+  const externalIdpHeader: Record<string, string> =
+    authMethod === 'external_idp' ? { TokenType: 'EXTERNAL_IDP' } : {};
+
   // AWS exposes GetUsageLimits three ways; try each until one returns 2xx, mirroring the Kiro CLI:
   //   1. codewhisperer.{region} REST GET (no body)
   //   2. codewhisperer.{region} AWS-JSON POST with the profile ARN
@@ -1607,18 +1613,18 @@ const fetchKiroQuota = async (file: AuthFileItem, t: TFunction): Promise<KiroFet
     {
       method: 'GET',
       url: buildKiroUsageGetUrl(region),
-      header: { ...KIRO_USAGE_GET_HEADERS },
+      header: { ...KIRO_USAGE_GET_HEADERS, ...externalIdpHeader },
     },
     {
       method: 'POST',
       url: buildKiroUsagePostUrl(region),
-      header: { ...KIRO_USAGE_POST_HEADERS },
+      header: { ...KIRO_USAGE_POST_HEADERS, ...externalIdpHeader },
       data: JSON.stringify({ origin: 'AI_EDITOR', profileArn, resourceType: 'AGENTIC_REQUEST' }),
     },
     {
       method: 'GET',
       url: buildKiroUsageQGetUrl(region, profileArn),
-      header: { ...KIRO_USAGE_Q_GET_HEADERS },
+      header: { ...KIRO_USAGE_Q_GET_HEADERS, ...externalIdpHeader },
     },
   ];
 

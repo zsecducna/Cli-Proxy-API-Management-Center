@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useNotificationStore, useThemeStore } from '@/stores';
-import { oauthApi, type OAuthProvider } from '@/services/api/oauth';
+import { oauthApi, type OAuthProvider, type KiroLoginType } from '@/services/api/oauth';
 import { vertexApi, type VertexImportResponse } from '@/services/api/vertex';
 import { copyToClipboard } from '@/utils/clipboard';
 import styles from './OAuthPage.module.scss';
@@ -32,7 +32,10 @@ interface ProviderState {
   callbackSubmitting?: boolean;
   callbackStatus?: 'success' | 'error';
   callbackError?: string;
-  // Kiro device flow: IAM Identity Center start URL (blank => AWS Builder ID) and region.
+  // Kiro login-type selector: builder-id (default) | idc (IAM Identity Center) | sso
+  // (Kiro hosted enterprise SSO / social login).
+  kiroLoginType?: KiroLoginType;
+  // Kiro device flow: IAM Identity Center start URL (idc method only) and region.
   idcStartURL?: string;
   region?: string;
   // Kiro IDC login: username used to name the saved auth file (required only for IDC).
@@ -95,6 +98,16 @@ const SUCCESS_RESET_DELAY_MS = 5000;
 const getProviderI18nPrefix = (provider: OAuthProvider) => provider.replace('-', '_');
 const getAuthKey = (provider: OAuthProvider, suffix: string) =>
   `auth_login.${getProviderI18nPrefix(provider)}_${suffix}`;
+
+// Kiro login-type selector: the three flows offered for the Kiro provider and their labels.
+const KIRO_LOGIN_TYPES: KiroLoginType[] = ['builder-id', 'idc', 'sso'];
+const KIRO_METHOD_I18N: Record<KiroLoginType, string> = {
+  'builder-id': 'auth_login.kiro_method_builder_id',
+  idc: 'auth_login.kiro_method_idc',
+  sso: 'auth_login.kiro_method_sso'
+};
+const getKiroLoginType = (state: { kiroLoginType?: KiroLoginType }): KiroLoginType =>
+  state.kiroLoginType || 'builder-id';
 
 const getIcon = (icon: string | { light: string; dark: string }, theme: 'light' | 'dark') => {
   return typeof icon === 'string' ? icon : icon[theme];
@@ -239,8 +252,10 @@ export function OAuthPage() {
       if (provider === 'gemini-cli' && current.projectId !== undefined) {
         next.projectId = current.projectId;
       }
-      // Preserve Kiro's IDC start URL / region / username so "login another account" reuses them.
+      // Preserve Kiro's selected login type + IDC start URL / region / username so
+      // "login another account" reuses them.
       if (provider === 'kiro') {
+        if (current.kiroLoginType !== undefined) next.kiroLoginType = current.kiroLoginType;
         if (current.idcStartURL !== undefined) next.idcStartURL = current.idcStartURL;
         if (current.region !== undefined) next.region = current.region;
         if (current.username !== undefined) next.username = current.username;
@@ -306,20 +321,27 @@ export function OAuthPage() {
         ? 'ALL'
         : rawProjectId
       : undefined;
-    // Kiro device flow inputs: optional IAM Identity Center start URL + AWS region.
+    // Kiro login inputs: the selected login type plus IDC start URL / region / username.
     const kiroState = provider === 'kiro' ? states[provider] : undefined;
+    const kiroLoginType: KiroLoginType = kiroState ? getKiroLoginType(kiroState) : 'builder-id';
     const idcStartURL = provider === 'kiro' ? (kiroState?.idcStartURL || '').trim() : '';
     const region = provider === 'kiro' ? (kiroState?.region || '').trim() : '';
-    // Username is required only for the IDC method (when an IDC start URL is present);
-    // the AWS Builder ID flow ignores it. The backend names the saved auth file after it.
     const username = provider === 'kiro' ? (kiroState?.username || '').trim() : '';
-    // Block IDC login when username is empty: surface an inline field error and stop.
-    if (provider === 'kiro' && idcStartURL && !username) {
-      updateProviderState(provider, {
-        usernameError: t('auth_login.kiro_username_required')
-      });
-      showNotification(t('auth_login.kiro_username_required'), 'warning');
-      return;
+    // IDC requires both a start URL (selects the org's Identity Center) and a username
+    // (names the saved auth file). Validate up front so the user gets inline errors rather
+    // than a backend 400. Builder ID and SSO need neither.
+    if (provider === 'kiro' && kiroLoginType === 'idc') {
+      if (!idcStartURL) {
+        showNotification(t('auth_login.kiro_idc_start_url_required'), 'warning');
+        return;
+      }
+      if (!username) {
+        updateProviderState(provider, {
+          usernameError: t('auth_login.kiro_username_required')
+        });
+        showNotification(t('auth_login.kiro_username_required'), 'warning');
+        return;
+      }
     }
     // 项目 ID 可选：留空自动选择第一个可用项目；输入 ALL 获取全部项目
     if (provider === 'gemini-cli') {
@@ -346,7 +368,12 @@ export function OAuthPage() {
         provider === 'gemini-cli'
           ? { projectId: projectId || undefined }
           : provider === 'kiro'
-            ? { idcStartURL: idcStartURL || undefined, region: region || undefined, username: username || undefined }
+            ? {
+                idcStartURL: idcStartURL || undefined,
+                region: region || undefined,
+                username: username || undefined,
+                loginType: kiroLoginType
+              }
             : undefined
       );
       if (!res.state) {
@@ -550,40 +577,71 @@ export function OAuthPage() {
                   )}
                   {provider.id === 'kiro' && (
                     <div className={styles.geminiProjectField}>
-                      <Input
-                        label={t('auth_login.kiro_idc_start_url_label')}
-                        hint={t('auth_login.kiro_idc_start_url_hint')}
-                        value={state.idcStartURL || ''}
-                        disabled={Boolean(state.polling)}
-                        onChange={(e) =>
-                          updateProviderState(provider.id, { idcStartURL: e.target.value })
-                        }
-                        placeholder={t('auth_login.kiro_idc_start_url_placeholder')}
-                      />
-                      <Input
-                        label={t('auth_login.kiro_username_label')}
-                        hint={t('auth_login.kiro_username_hint')}
-                        value={state.username || ''}
-                        error={state.usernameError}
-                        disabled={Boolean(state.polling)}
-                        onChange={(e) =>
-                          updateProviderState(provider.id, {
-                            username: e.target.value,
-                            usernameError: undefined
-                          })
-                        }
-                        placeholder={t('auth_login.kiro_username_placeholder')}
-                      />
-                      <Input
-                        label={t('auth_login.kiro_region_label')}
-                        hint={t('auth_login.kiro_region_hint')}
-                        value={state.region || ''}
-                        disabled={Boolean(state.polling)}
-                        onChange={(e) =>
-                          updateProviderState(provider.id, { region: e.target.value })
-                        }
-                        placeholder={t('auth_login.kiro_region_placeholder')}
-                      />
+                      {/* Login-type selector: AWS Builder ID, AWS IAM Identity Center, SSO. */}
+                      <div className={styles.kiroMethodTabs}>
+                        {KIRO_LOGIN_TYPES.map((method) => (
+                          <Button
+                            key={method}
+                            variant={getKiroLoginType(state) === method ? 'primary' : 'secondary'}
+                            size="sm"
+                            disabled={Boolean(state.polling)}
+                            onClick={() =>
+                              updateProviderState(provider.id, {
+                                kiroLoginType: method,
+                                usernameError: undefined
+                              })
+                            }
+                          >
+                            {t(KIRO_METHOD_I18N[method])}
+                          </Button>
+                        ))}
+                      </div>
+                      {getKiroLoginType(state) === 'sso' && (
+                        <div className={styles.cardHintSecondary}>
+                          {t('auth_login.kiro_sso_hint')}
+                        </div>
+                      )}
+                      {getKiroLoginType(state) === 'idc' && (
+                        <>
+                          <Input
+                            label={t('auth_login.kiro_idc_start_url_label')}
+                            hint={t('auth_login.kiro_idc_start_url_hint')}
+                            value={state.idcStartURL || ''}
+                            disabled={Boolean(state.polling)}
+                            onChange={(e) =>
+                              updateProviderState(provider.id, { idcStartURL: e.target.value })
+                            }
+                            placeholder={t('auth_login.kiro_idc_start_url_placeholder')}
+                          />
+                          <Input
+                            label={t('auth_login.kiro_username_label')}
+                            hint={t('auth_login.kiro_username_hint')}
+                            value={state.username || ''}
+                            error={state.usernameError}
+                            disabled={Boolean(state.polling)}
+                            onChange={(e) =>
+                              updateProviderState(provider.id, {
+                                username: e.target.value,
+                                usernameError: undefined
+                              })
+                            }
+                            placeholder={t('auth_login.kiro_username_placeholder')}
+                          />
+                        </>
+                      )}
+                      {/* Region applies to the AWS OIDC flows (builder-id / idc); SSO ignores it. */}
+                      {getKiroLoginType(state) !== 'sso' && (
+                        <Input
+                          label={t('auth_login.kiro_region_label')}
+                          hint={t('auth_login.kiro_region_hint')}
+                          value={state.region || ''}
+                          disabled={Boolean(state.polling)}
+                          onChange={(e) =>
+                            updateProviderState(provider.id, { region: e.target.value })
+                          }
+                          placeholder={t('auth_login.kiro_region_placeholder')}
+                        />
+                      )}
                     </div>
                   )}
                   {state.url && (

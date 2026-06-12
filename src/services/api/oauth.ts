@@ -13,6 +13,13 @@ export type OAuthProvider =
   | 'kiro'
   | 'xai';
 
+// KiroLoginType selects which Kiro authentication flow to start:
+//   - 'builder-id': AWS Builder ID device flow (default, personal AWS account).
+//   - 'idc':        AWS IAM Identity Center device flow (needs a start URL + username).
+//   - 'sso':        Kiro hosted enterprise SSO / social login (federates Google, GitHub,
+//                   and enterprise IdPs such as an Azure AD tenant; no start URL needed).
+export type KiroLoginType = 'builder-id' | 'idc' | 'sso';
+
 export interface OAuthStartResponse {
   url: string;
   state?: string;
@@ -39,7 +46,13 @@ const CALLBACK_PROVIDER_MAP: Partial<Record<OAuthProvider, string>> = {
 export const oauthApi = {
   startAuth: (
     provider: OAuthProvider,
-    options?: { projectId?: string; idcStartURL?: string; region?: string; username?: string }
+    options?: {
+      projectId?: string;
+      idcStartURL?: string;
+      region?: string;
+      username?: string;
+      loginType?: KiroLoginType;
+    }
   ) => {
     const params: Record<string, string | boolean> = {};
     if (WEBUI_SUPPORTED.includes(provider)) {
@@ -48,17 +61,23 @@ export const oauthApi = {
     if (provider === 'gemini-cli' && options?.projectId) {
       params.project_id = options.projectId;
     }
-    // Kiro device flow: an IDC start URL selects IAM Identity Center; region overrides
-    // the default AWS OIDC region. Both are optional (blank => AWS Builder ID flow).
+    // Kiro login: "method" selects the flow — builder-id (AWS Builder ID), idc (AWS IAM
+    // Identity Center), or sso (the Kiro hosted enterprise SSO / social login that
+    // federates Google, GitHub, and enterprise IdPs such as an Azure AD tenant).
     if (provider === 'kiro') {
-      const idcStartURL = options?.idcStartURL?.trim();
+      const loginType: KiroLoginType = options?.loginType ?? 'builder-id';
+      params.method = loginType;
       const region = options?.region?.trim();
-      const username = options?.username?.trim();
-      if (idcStartURL) params.idc_start_url = idcStartURL;
+      // Region applies to the AWS OIDC endpoints (builder-id / idc); SSO ignores it.
       if (region) params.region = region;
-      // Username is required by the backend for IDC login (used to name the saved
-      // auth file). Only send it when present; validation is enforced at the call site.
-      if (username) params.username = username;
+      // IDC-only inputs: the start URL selects the org's Identity Center and the username
+      // names the saved auth file. Builder ID and SSO do not use them.
+      if (loginType === 'idc') {
+        const idcStartURL = options?.idcStartURL?.trim();
+        const username = options?.username?.trim();
+        if (idcStartURL) params.idc_start_url = idcStartURL;
+        if (username) params.username = username;
+      }
     }
     return apiClient.get<OAuthStartResponse>(`/${provider}-auth-url`, {
       params: Object.keys(params).length ? params : undefined

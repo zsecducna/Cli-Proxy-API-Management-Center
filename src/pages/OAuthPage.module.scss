@@ -166,6 +166,14 @@
   }
 }
 
+// Kiro login-type selector: a row of toggle buttons (Builder ID / IDC / SSO).
+.kiroMethodTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-sm;
+  margin-bottom: $spacing-sm;
+}
+
 .formItem {
   display: flex;
   flex-direction: column;
